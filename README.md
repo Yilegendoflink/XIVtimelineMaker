@@ -4,7 +4,9 @@
 
 ## 使用说明
 
-待会把网址放在这
+点击网址https://yilegendoflink.github.io/XIVtimelineMaker/ 进入使用。需要先登录fflogs页面进行授权。
+
+v2 api的用量限制我还没研究，姑且凑合用，没了再说.jpg
 
 ## 关于技能类型（物理/魔法）和翻译问题
 
