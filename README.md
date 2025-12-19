@@ -2,59 +2,14 @@
 
 这是一个纯前端的 Web 应用程序，用于从 FF Logs 导出 BOSS 技能与伤害时间轴。
 
-## 功能特点
-- **安全**: 使用 OAuth2 PKCE 模式，无需在前端暴露 Client Secret。
-- **便捷**: 直接在浏览器运行，支持导出 Excel。
-- **自动过滤**: 自动识别并排除玩家造成的伤害，只保留 BOSS 和小怪的技能。
-
 ## 使用说明
 
-### 1. 注册 FF Logs 应用
-为了使用此工具，您需要在 FF Logs 注册一个应用以获取 Client ID。
+待会把网址放在这
 
-1. 登录 [FF Logs](https://www.fflogs.com/)。
-2. 访问 [Client Management](https://www.fflogs.com/api/clients/) 页面。
-3. 点击 "Create Client"。
-4. 填写信息：
-   - **Name**: 任意名称 (例如: My Timeline Exporter)
-   - **Redirect URL**: 
-     - 如果是本地运行，填写: `http://127.0.0.1:5500/index.html` (取决于您的本地服务器地址)
-     - 如果部署到 GitHub Pages，填写: `https://您的用户名.github.io/仓库名/`
-   - **Public Client**: **必须勾选** (这很重要，否则 PKCE 无法工作)。
-5. 创建成功后，复制 **Client ID**。
+## 关于技能类型（物理/魔法）和翻译问题
 
-### 2. 配置项目
-打开项目文件夹中的 `config.js` 文件，找到以下行并修改：
+由于从fflogs拉取的原始数据中只包含了英文技能名，也没有包含伤害类型，所以暂时使用对照表格处理，表格存于两个csv文件中，分别对应技能翻译与伤害类型、敌人名翻译。目前暂时为空，有人闲得无聊的话可以帮我翻译下（）
 
-```javascript
-const CONFIG = {
-    // 将此处替换为您刚刚获取的 Client ID
-    CLIENT_ID: 'YOUR_CLIENT_ID_HERE', 
-    
-    // ...
-};
-```
-
-### 3. 运行项目
-由于使用了 ES6 模块和 OAuth 跳转，您不能直接双击打开 `index.html`。您需要一个本地 Web 服务器。
-
-**方法 A: 使用 VS Code Live Server 插件 (推荐)**
-1. 在 VS Code 中安装 "Live Server" 插件。
-2. 右键点击 `index.html`，选择 "Open with Live Server"。
-
-**方法 B: 使用 Python**
-在项目根目录下打开终端，运行：
-```bash
-python -m http.server 5500
-```
-然后访问 `http://localhost:5500`。
-
-### 4. 部署到 GitHub Pages
-1. 将整个项目推送到 GitHub 仓库。
-2. 在仓库设置 (Settings) -> Pages 中，选择从 `main` 分支部署。
-3. 获取生成的网址 (例如 `https://user.github.io/repo/`)。
-4. **重要**: 回到 FF Logs 的 Client Management 页面，将该网址添加到 Redirect URL 列表中。
-5. 更新 `config.js` 中的 `REDIRECT_URI` (如果代码中没有自动检测的话，本代码已设置为自动检测当前 URL)。
 
 ## 注意事项
 - 首次使用需要点击“登录 FF Logs”进行授权。
