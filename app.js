@@ -15,7 +15,17 @@ const UI = {
     fightSelectorContainer: document.getElementById('fight-selector-container'),
     logContainer: document.getElementById('log-container'),
     debugModeCheckbox: document.getElementById('debug-mode-checkbox'),
-    showEnglishCheckbox: document.getElementById('show-english-checkbox')
+    showEnglishCheckbox: document.getElementById('show-english-checkbox'),
+    ignoreAutoAttackCheckbox: document.getElementById('ignore-auto-attack-checkbox'),
+    mergeDotCheckbox: document.getElementById('merge-dot-checkbox'),
+    // Custom Client ID UI
+    useCustomClientIdCheckbox: document.getElementById('use-custom-client-id'),
+    customClientIdInput: document.getElementById('custom-client-id'),
+    customClientInputContainer: document.getElementById('custom-client-input-container'),
+    helpClientIdBtn: document.getElementById('help-client-id-btn'),
+    clientIdModal: document.getElementById('client-id-modal'),
+    closeModalBtn: document.querySelector('.close-modal'),
+    modalRedirectUri: document.getElementById('modal-redirect-uri')
 };
 
 // 存储从 CSV 加载的翻译数据
@@ -53,13 +63,60 @@ async function init() {
     updateAuthUI();
 
     // 事件绑定
-    UI.loginBtn.addEventListener('click', () => Auth.login());
+    UI.loginBtn.addEventListener('click', () => {
+        // 保存自定义 Client ID
+        if (UI.useCustomClientIdCheckbox.checked && UI.customClientIdInput.value.trim()) {
+            localStorage.setItem('fflogs_custom_client_id', UI.customClientIdInput.value.trim());
+        } else {
+            localStorage.removeItem('fflogs_custom_client_id');
+        }
+        Auth.login();
+    });
     UI.logoutBtn.addEventListener('click', () => Auth.logout());
     UI.analyzeBtn.addEventListener('click', handleAnalyze);
     UI.reportUrlInput.addEventListener('change', handleUrlInput);
     
+    // 自定义 Client ID UI 逻辑
+    initCustomClientIdUI();
+
     // 自动加载翻译文件
     loadTranslationFiles();
+}
+
+function initCustomClientIdUI() {
+    // 恢复保存的 Client ID
+    const savedClientId = localStorage.getItem('fflogs_custom_client_id');
+    if (savedClientId) {
+        UI.useCustomClientIdCheckbox.checked = true;
+        UI.customClientIdInput.value = savedClientId;
+        UI.customClientInputContainer.classList.remove('hidden');
+    }
+
+    // 切换显示
+    UI.useCustomClientIdCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            UI.customClientInputContainer.classList.remove('hidden');
+        } else {
+            UI.customClientInputContainer.classList.add('hidden');
+        }
+    });
+
+    // 模态框逻辑
+    UI.helpClientIdBtn.addEventListener('click', () => {
+        UI.modalRedirectUri.textContent = CONFIG.REDIRECT_URI;
+        UI.clientIdModal.classList.remove('hidden');
+    });
+
+    UI.closeModalBtn.addEventListener('click', () => {
+        UI.clientIdModal.classList.add('hidden');
+    });
+
+    // 点击模态框外部关闭
+    window.addEventListener('click', (e) => {
+        if (e.target === UI.clientIdModal) {
+            UI.clientIdModal.classList.add('hidden');
+        }
+    });
 }
 
 // 解析 CSV 文件
@@ -337,14 +394,113 @@ async function handleAnalyze() {
         }
 
         // 先过滤掉玩家和宠物的事件，以及非 damage 类型的事件
-        const filteredEvents = events.filter(event => {
+        let filteredEvents = events.filter(event => {
             // 只保留 'damage' 类型，排除 'calculateddamage' 避免重复
             if (event.type !== 'damage') return false;
             
             if (event.sourceID && playerIds.has(event.sourceID)) return false;
             if (event.sourceID && playerPetIds.has(event.sourceID)) return false;
+
+            // 过滤 Combined DoT (FF Logs 汇总数据，会导致重复)
+            let checkName = '';
+            if (event.ability && event.ability.name) {
+                checkName = event.ability.name;
+            } else if (event.abilityGameID && abilityMap[event.abilityGameID]) {
+                checkName = abilityMap[event.abilityGameID];
+            }
+            if (checkName === 'Combined DoTs') return false;
+
+            // 忽略普通攻击逻辑
+            if (UI.ignoreAutoAttackCheckbox && UI.ignoreAutoAttackCheckbox.checked) {
+                // 检查 Game ID (通常普攻是 1)
+                if (event.abilityGameID === 1) return false;
+
+                // 检查名称
+                let abilityNameEn = '';
+                if (event.ability && event.ability.name) {
+                    abilityNameEn = event.ability.name;
+                } else if (event.abilityGameID && abilityMap[event.abilityGameID]) {
+                    abilityNameEn = abilityMap[event.abilityGameID];
+                }
+                
+                if (abilityNameEn === 'Attack' || abilityNameEn === 'Auto Attack') return false;
+            }
+
             return true;
         });
+
+        // 处理 DoT 合并逻辑
+        if (UI.mergeDotCheckbox && UI.mergeDotCheckbox.checked) {
+            log('正在合并 DoT 伤害...');
+            const directEvents = [];
+            const dotEvents = [];
+
+            // 1. 分离直伤和 DoT
+            filteredEvents.forEach(e => {
+                if (e.tick) {
+                    dotEvents.push(e);
+                } else {
+                    directEvents.push(e);
+                }
+            });
+
+            // 2. 对 DoT 进行分组聚合
+            // Key: sourceID_targetID_abilityGameID
+            const dotGroups = new Map();
+            
+            dotEvents.forEach(e => {
+                const key = `${e.sourceID}_${e.targetID}_${e.abilityGameID}`;
+                if (!dotGroups.has(key)) {
+                    dotGroups.set(key, []);
+                }
+                dotGroups.get(key).push(e);
+            });
+
+            const mergedDotEvents = [];
+            const DOT_GAP_THRESHOLD = 4000; // 4秒间隔判定为新的 DoT 序列
+
+            dotGroups.forEach((groupEvents, key) => {
+                // 按时间排序
+                groupEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+                let currentCluster = null;
+
+                groupEvents.forEach(e => {
+                    if (!currentCluster) {
+                        currentCluster = {
+                            events: [e],
+                            startTime: e.timestamp,
+                            lastTime: e.timestamp
+                        };
+                    } else {
+                        if (e.timestamp - currentCluster.lastTime <= DOT_GAP_THRESHOLD) {
+                            currentCluster.events.push(e);
+                            currentCluster.lastTime = e.timestamp;
+                        } else {
+                            // 结束当前 Cluster，推入结果
+                            mergedDotEvents.push(createSyntheticDotEventNew(currentCluster));
+                            // 开启新 Cluster
+                            currentCluster = {
+                                events: [e],
+                                startTime: e.timestamp,
+                                lastTime: e.timestamp
+                            };
+                        }
+                    }
+                });
+                // 处理最后一个 Cluster
+                if (currentCluster) {
+                    mergedDotEvents.push(createSyntheticDotEventNew(currentCluster));
+                }
+            });
+
+            // 3. 合并回主事件流
+            filteredEvents = [...directEvents, ...mergedDotEvents];
+            // 重新按时间排序
+            filteredEvents.sort((a, b) => a.timestamp - b.timestamp);
+            
+            log(`DoT 合并完成: ${dotEvents.length} 条 Tick 合并为 ${mergedDotEvents.length} 条记录`);
+        }
 
         // 按照时间戳、来源、技能分组，用于合并 AOE
         // AOE 判定：时间戳差异 < 1000ms (1秒), sourceID 相同, abilityGameID 相同
@@ -362,9 +518,22 @@ async function handleAnalyze() {
                 if (timeDiff <= AOE_TIME_THRESHOLD && 
                     sourceId === group.sourceID && 
                     abilityId === group.abilityId) {
+                    
+                    // 如果当前事件伤害更高，将其作为代表事件（通常我们关注受伤害最高的情况）
+                    if ((event.amount || 0) > group.maxDamage) {
+                        group.representativeEvent = event;
+                    }
+
                     // 找到匹配的 AOE 组，更新最大伤害和时间戳范围
                     group.events.push(event);
                     group.maxDamage = Math.max(group.maxDamage, event.amount || 0);
+                    
+                    // 仅记录 API 提供的明确的 unmitigatedAmount
+                    if (event.unmitigatedAmount) {
+                        group.maxUnmitigated = Math.max(group.maxUnmitigated || 0, event.unmitigatedAmount);
+                    }
+                    group.maxAbsorbed = Math.max(group.maxAbsorbed, event.absorbed || 0);
+                    
                     // 更新时间戳为最早的时间
                     group.timestamp = Math.min(group.timestamp, event.timestamp);
                     foundGroup = true;
@@ -381,6 +550,8 @@ async function handleAnalyze() {
                     abilityId: abilityId,
                     events: [event],
                     maxDamage: event.amount || 0,
+                    maxUnmitigated: event.unmitigatedAmount || 0, // 仅记录明确的值
+                    maxAbsorbed: event.absorbed || 0,
                     representativeEvent: event
                 });
             }
@@ -420,8 +591,14 @@ async function handleAnalyze() {
                 abilityNameEn = `Unknown (${event.abilityGameID})`;
             }
             const abilityTranslation = translateAbility(abilityNameEn);
-            const abilityName = abilityTranslation.name;
+            let abilityName = abilityTranslation.name;
             const damageType = abilityTranslation.type;
+
+            // 如果是 DoT 汇总，添加标记
+            if (event.isDotSummary) {
+                abilityName += ' (DoT)';
+                abilityNameEn += ' (DoT)';
+            }
 
             // 使用 AOE 组中的最大伤害
             const damage = group.maxDamage;
@@ -429,13 +606,46 @@ async function handleAnalyze() {
             // 根据选项决定是否显示英文原名
             const showEnglish = UI.showEnglishCheckbox && UI.showEnglishCheckbox.checked;
             
+            // 计算原始伤害（估算）
+            // 逻辑：优先使用 API 提供的 unmitigatedAmount。
+            // 如果 API 未提供 (为 0 或 undefined)，则使用公式 (amount + absorbed) / multiplier 进行估算。
+            let rawDamage = group.maxUnmitigated; 
+
+            if (!rawDamage) {
+                const repAmount = event.amount || 0;
+                const repAbsorbed = event.absorbed || 0;
+                const repMultiplier = event.multiplier || 1;
+                
+                if (repMultiplier !== 0) {
+                    rawDamage = (repAmount + repAbsorbed) / repMultiplier;
+                } else {
+                    rawDamage = repAmount + repAbsorbed;
+                }
+            }
+
+            // 约至千位数 (四舍五入到最近的 1000)
+            rawDamage = Math.round(rawDamage / 1000) * 1000;
+
             const result = {
                 '时间': timeStr,
                 '来源': showEnglish ? sourceNameEn : sourceName,
                 '技能': showEnglish ? abilityNameEn : abilityName,
                 '伤害类型': damageType || '',
                 '最大伤害': damage,
-                '受击人数': group.events.length
+                '盾值吸收': group.maxAbsorbed,
+                '减伤倍率': event.multiplier,
+                '原始伤害（估算）': rawDamage,
+                '受击人数': group.events.length,
+                'DoT持续时间': event.dotDuration ? (event.dotDuration / 1000).toFixed(1) + 's' : '',
+                'DoT每跳原始': event.dotTickRaw ? Math.round(event.dotTickRaw) : '',
+                'MT': '',
+                'ST': '',
+                'H1': '',
+                'H2': '',
+                'D1': '',
+                'D2': '',
+                'D3': '',
+                'D4': ''
             };
             
             return result;
@@ -468,11 +678,24 @@ function exportToExcel(data, filename) {
     // 设置列宽
     const wscols = [
         {wch: 10}, // 时间
-        {wch: 15}, // 时间戳
         {wch: 20}, // 来源
         {wch: 30}, // 技能
-        {wch: 15}, // 伤害
-        {wch: 15}  // 伤害约
+        {wch: 15}, // 伤害类型
+        {wch: 15}, // 最大伤害
+        {wch: 15}, // 盾值吸收
+        {wch: 10}, // 减伤倍率
+        {wch: 20}, // 原始伤害（估算）
+        {wch: 10}, // 受击人数
+        {wch: 15}, // DoT持续时间
+        {wch: 15}, // DoT每跳原始
+        {wch: 8},  // MT
+        {wch: 8},  // ST
+        {wch: 8},  // H1
+        {wch: 8},  // H2
+        {wch: 8},  // D1
+        {wch: 8},  // D2
+        {wch: 8},  // D3
+        {wch: 8}   // D4
     ];
     ws['!cols'] = wscols;
 
@@ -486,3 +709,70 @@ function exportToExcel(data, filename) {
 
 // 启动应用
 init();
+// �����ϳɵ� DoT �¼�
+function createSyntheticDotEvent(cluster) {
+    const firstEvent = cluster.events[0];
+    
+    // ������ֵ
+    let totalAmount = 0;
+    let totalUnmitigated = 0;
+    let totalAbsorbed = 0;
+    
+    cluster.events.forEach(e => {
+        totalAmount += (e.amount || 0);
+        totalUnmitigated += (e.unmitigatedAmount || e.amount || 0);
+        totalAbsorbed += (e.absorbed || 0);
+    });
+
+    // �������¼��������ؼ������Ա��������
+    return {
+        ...firstEvent, // ���ƴ󲿷����� (sourceID, targetID, ability, etc.)
+        timestamp: cluster.startTime, // ʹ�õ�һ����ʱ����Ϊ��ʼʱ��
+        amount: totalAmount,
+        unmitigatedAmount: totalUnmitigated,
+        absorbed: totalAbsorbed,
+        tick: false, // ���Ϊ�� tick�����ⱻ�����߼����У���ȻĿǰ�����߼����� tick��
+        isDotSummary: true, // �Զ�����
+        // ע�⣺multiplier ʹ�õ�һ���Ŀ���ֵ
+        multiplier: firstEvent.multiplier
+    };
+}
+
+
+// �����ϳɵ� DoT �¼� (V2)
+function createSyntheticDotEventNew(cluster) {
+    const firstEvent = cluster.events[0];
+    
+    // ������ֵ
+    let totalAmount = 0;
+    let totalUnmitigated = 0;
+    let totalAbsorbed = 0;
+    
+    cluster.events.forEach(e => {
+        totalAmount += (e.amount || 0);
+        totalUnmitigated += (e.unmitigatedAmount || e.amount || 0);
+        totalAbsorbed += (e.absorbed || 0);
+    });
+
+    // �������ʱ���ÿ��ԭʼ�˺�
+    const duration = cluster.lastTime - cluster.startTime;
+    const tickCount = cluster.events.length;
+    const avgRawPerTick = tickCount > 0 ? (totalUnmitigated / tickCount) : 0;
+
+    // �������¼��������ؼ������Ա��������
+    return {
+        ...firstEvent, // ���ƴ󲿷����� (sourceID, targetID, ability, etc.)
+        timestamp: cluster.startTime, // ʹ�õ�һ����ʱ����Ϊ��ʼʱ��
+        amount: totalAmount,
+        unmitigatedAmount: totalUnmitigated,
+        absorbed: totalAbsorbed,
+        tick: false, // ���Ϊ�� tick
+        isDotSummary: true, // �Զ�����
+        // ע�⣺multiplier ʹ�õ�һ���Ŀ���ֵ
+        multiplier: firstEvent.multiplier,
+        // �����ֶ�
+        dotDuration: duration,
+        dotTickRaw: avgRawPerTick
+    };
+}
+

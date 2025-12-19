@@ -23,8 +23,44 @@
                 <h2>第一步：连接 FF Logs</h2>
                 <p>本工具需要连接 FF Logs API 读取数据。请点击下方按钮进行授权。</p>
                 <p class="note">注意：本工具运行在您的浏览器本地，不会保存您的任何账号信息。</p>
+                
+                <!-- 自定义 Client ID 选项 -->
+                <div class="custom-client-section">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="use-custom-client-id">
+                        使用自定义 Client ID (若内置的api限额耗尽)
+                    </label>
+                    <div id="custom-client-input-container" class="hidden">
+                        <input type="text" id="custom-client-id" placeholder="输入您的 FF Logs Client ID">
+                        <button id="help-client-id-btn" class="text-btn small-btn">如何获取 Client ID?</button>
+                    </div>
+                </div>
+
                 <button id="login-btn" class="primary-btn">登录 FF Logs</button>
             </section>
+
+            <!-- Client ID 帮助弹窗 -->
+            <div id="client-id-modal" class="modal hidden">
+                <div class="modal-content">
+                    <span class="close-modal">&times;</span>
+                    <h3>如何获取 FF Logs Client ID</h3>
+                    <ol>
+                        <li>登录 <a href="https://www.fflogs.com" target="_blank">FF Logs</a> 网站。</li>
+                        <li>点击右上角头像，选择 <strong>Settings (设置)</strong>。</li>
+                        <li>在左侧菜单底部找到 <strong>Web API</strong> 并选择 <strong>Manage your v2 clients</strong> (或者直接访问 <a href="https://www.fflogs.com/api/clients" target="_blank">API Clients</a>)。</li>
+                        <li>点击 <strong>Create Client (创建客户端)</strong>。</li>
+                        <li>填写信息：
+                            <ul>
+                                <li><strong>Name:</strong> 任意填写 (例如: Timeline Exporter)</li>
+                                <li><strong>Redirect URL:</strong> <code id="modal-redirect-uri"></code> <br><small>务必填写的完全一致</small></li>
+                                <li><strong>Public Client:</strong> 勾选 ✅ (非常重要！)</li>
+                            </ul>
+                        </li>
+                        <li>点击创建后，复制显示的 <strong>Client ID</strong>。</li>
+                        <li>将 Client ID 粘贴到本工具的输入框中即可。</li>
+                    </ol>
+                </div>
+            </div>
 
             <!-- 主应用部分 -->
             <section id="app-section" class="card hidden">
@@ -35,7 +71,7 @@
 
                 <h2>第二步：输入战斗记录</h2>
                 <p class="note warning">
-                    ⚠️ <strong>重要提示：</strong>工具导出的伤害数据存在一定的失真，只能够直接取得减伤、盾值生效计算后实际造成的伤害值，请谨慎作为减伤轴安排的参考。
+                    ⚠️ <strong>重要提示：</strong>游戏内日志无原始伤害数据记录，表格内的原始伤害为根据实际伤害、盾值和减伤率计算的估算值，仅供参考。
                 </p>
                 <div class="input-group">
                     <label for="report-url">FF Logs 网址 (Report URL)</label>
@@ -48,6 +84,14 @@
                 </div>
 
                 <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="ignore-auto-attack-checkbox">
+                        忽略普通攻击 (Attack / Auto Attack)
+                    </label>
+                    <label>
+                        <input type="checkbox" id="merge-dot-checkbox">
+                        合并 DoT 伤害 (将持续伤害聚合为一行)
+                    </label>
                     <label>
                         <input type="checkbox" id="show-english-checkbox">
                         导出原始英文名称（技能和敌人）

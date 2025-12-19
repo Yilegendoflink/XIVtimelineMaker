@@ -66,8 +66,6 @@ const API = {
     },
 
     // 获取特定战斗的伤害事件
-    // 注意：FF Logs API 可能需要分页，这里简化处理，假设一次能取完或者只取第一页
-    // 实际生产环境可能需要处理 nextPageTimestamp
     async getDamageEvents(reportCode, fightId, startTime, endTime) {
         let allEvents = [];
         let nextTimestamp = startTime;
@@ -75,7 +73,7 @@ const API = {
 
         // 限制最大循环次数防止死循环
         let loopCount = 0;
-        const MAX_LOOPS = 20; 
+        const MAX_LOOPS = 500; 
 
         while (hasMore && loopCount < MAX_LOOPS) {
             loopCount++;

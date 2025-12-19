@@ -28,6 +28,12 @@ const Auth = {
             .replace(/=+$/, '');
     },
 
+    // 获取当前的 Client ID (优先使用用户自定义的)
+    getClientId() {
+        const customId = localStorage.getItem('fflogs_custom_client_id');
+        return customId || CONFIG.CLIENT_ID;
+    },
+
     // 开始登录流程
     async login() {
         // 1. 生成 Code Verifier
@@ -41,11 +47,11 @@ const Auth = {
         
         // 4. 构建授权 URL
         const params = new URLSearchParams({
-            client_id: CONFIG.CLIENT_ID,
+            client_id: this.getClientId(),
             redirect_uri: CONFIG.REDIRECT_URI,
             response_type: 'code',
             code_challenge: codeChallenge,
-            code_challenge_method: 'S256'
+            code_challenge_method: 'S256',
         });
 
         // 5. 跳转
@@ -70,7 +76,7 @@ const Auth = {
 
         try {
             const response = await axios.post(CONFIG.TOKEN_ENDPOINT, {
-                client_id: CONFIG.CLIENT_ID,
+                client_id: this.getClientId(),
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: CONFIG.REDIRECT_URI,

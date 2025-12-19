@@ -150,3 +150,95 @@ button {
 .log-error {
     color: #ff4444;
 }
+/* Custom Client ID Section */
+.custom-client-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: normal;
+    margin-bottom: 10px;
+}
+
+.checkbox-label input {
+    margin-right: 8px;
+}
+
+#custom-client-input-container {
+    margin-top: 10px;
+}
+
+.small-btn {
+    font-size: 12px;
+    margin-top: 5px;
+    display: inline-block;
+    color: var(--primary-color);
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.close-modal {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close-modal:hover {
+    color: #000;
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-content ol {
+    padding-left: 20px;
+}
+
+.modal-content li {
+    margin-bottom: 10px;
+}
+
+.modal-content code {
+    background: #eee;
+    padding: 2px 6px;
+    border-radius: 3px;
+    word-break: break-all;
+    font-family: monospace;
+}
+
