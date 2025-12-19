@@ -36,7 +36,7 @@ const API = {
                 report(code: "${reportCode}") {
                     title
                     startTime
-                    masterData {
+                    masterData(translate: false) {
                         actors {
                             id
                             name
@@ -47,9 +47,10 @@ const API = {
                         abilities {
                             gameID
                             name
+                            type
                         }
                     }
-                    fights {
+                    fights(translate: false) {
                         id
                         name
                         startTime
@@ -87,7 +88,8 @@ const API = {
                             startTime: ${nextTimestamp},
                             endTime: ${endTime},
                             dataType: DamageTaken,
-                            limit: 10000
+                            limit: 10000,
+                            translate: false
                         ) {
                             data
                             nextPageTimestamp

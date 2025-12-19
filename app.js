@@ -15,7 +15,6 @@ const UI = {
     fightSelectorContainer: document.getElementById('fight-selector-container'),
     logContainer: document.getElementById('log-container'),
     debugModeCheckbox: document.getElementById('debug-mode-checkbox'),
-    showEnglishCheckbox: document.getElementById('show-english-checkbox'),
     ignoreAutoAttackCheckbox: document.getElementById('ignore-auto-attack-checkbox'),
     mergeDotCheckbox: document.getElementById('merge-dot-checkbox'),
     // Custom Client ID UI
@@ -27,10 +26,6 @@ const UI = {
     closeModalBtn: document.querySelector('.close-modal'),
     modalRedirectUri: document.getElementById('modal-redirect-uri')
 };
-
-// 存储从 CSV 加载的翻译数据
-let csvAbilityTranslations = {};
-let csvActorTranslations = {};
 
 // 全局状态
 let currentReportCode = null;
@@ -78,9 +73,6 @@ async function init() {
     
     // 自定义 Client ID UI 逻辑
     initCustomClientIdUI();
-
-    // 自动加载翻译文件
-    loadTranslationFiles();
 }
 
 function initCustomClientIdUI() {
@@ -119,79 +111,7 @@ function initCustomClientIdUI() {
     });
 }
 
-// 解析 CSV 文件
-function parseCSV(text) {
-    const lines = text.split('\n').filter(line => line.trim());
-    return lines.map(line => {
-        // 简单的 CSV 解析，处理逗号分隔
-        const parts = line.split(',').map(part => part.trim());
-        return parts;
-    });
-}
 
-// 自动加载本地翻译文件
-async function loadTranslationFiles() {
-    let abilityCount = 0;
-    let actorCount = 0;
-    let errors = [];
-
-    // 加载技能翻译
-    try {
-        const response = await fetch('ability_translations.csv');
-        if (response.ok) {
-            const text = await response.text();
-            const rows = parseCSV(text);
-            
-            csvAbilityTranslations = {};
-            rows.forEach(row => {
-                if (row.length >= 2) {
-                    const englishName = row[0];
-                    const chineseName = row[1];
-                    const type = row[2] || null;
-                    
-                    csvAbilityTranslations[englishName] = {
-                        name: chineseName,
-                        type: type
-                    };
-                    abilityCount++;
-                }
-            });
-        } else {
-            errors.push('技能翻译文件未找到');
-        }
-    } catch (error) {
-        errors.push(`技能翻译: ${error.message}`);
-    }
-
-    // 加载敌人翻译
-    try {
-        const response = await fetch('actor_translations.csv');
-        if (response.ok) {
-            const text = await response.text();
-            const rows = parseCSV(text);
-            
-            csvActorTranslations = {};
-            rows.forEach(row => {
-                if (row.length >= 2) {
-                    const englishName = row[0];
-                    const chineseName = row[1];
-                    csvActorTranslations[englishName] = chineseName;
-                    actorCount++;
-                }
-            });
-        } else {
-            errors.push('敌人翻译文件未找到');
-        }
-    } catch (error) {
-        errors.push(`敌人翻译: ${error.message}`);
-    }
-
-    // 静默加载，仅在控制台输出（可选）
-    console.log(`翻译文件加载完成: ${abilityCount} 条技能, ${actorCount} 条敌人`);
-    if (errors.length > 0) {
-        console.warn('翻译文件加载警告:', errors);
-    }
-}
 
 function updateAuthUI() {
     if (Auth.isAuthenticated()) {
@@ -331,7 +251,11 @@ async function handleAnalyze() {
 
         // 建立 Ability GameID 到名称的映射
         const abilityMap = {};
-        abilities.forEach(ab => abilityMap[ab.gameID] = ab.name);
+        const abilityTypeMap = {};
+        abilities.forEach(ab => {
+            abilityMap[ab.gameID] = ab.name;
+            abilityTypeMap[ab.gameID] = ab.type;
+        });
 
         // 2. 获取伤害事件
         log('正在下载伤害数据...');
@@ -573,38 +497,65 @@ async function handleAnalyze() {
             const timeStr = `${mm}:${ss}`;
 
             // 获取来源名称
-            let sourceNameEn = 'Unknown';
+            let sourceName = 'Unknown';
             if (event.sourceID && actorMap[event.sourceID]) {
-                sourceNameEn = actorMap[event.sourceID].name;
+                sourceName = actorMap[event.sourceID].name;
             } else if (!event.sourceID) {
-                sourceNameEn = 'Environment';
+                sourceName = 'Environment';
             }
-            const sourceName = translateActor(sourceNameEn);
 
-            // 获取技能名称
-            let abilityNameEn = 'Unknown';
-            if (event.ability && event.ability.name) {
-                abilityNameEn = event.ability.name;
-            } else if (event.abilityGameID && abilityMap[event.abilityGameID]) {
-                abilityNameEn = abilityMap[event.abilityGameID];
-            } else if (event.abilityGameID) {
-                abilityNameEn = `Unknown (${event.abilityGameID})`;
+            // 获取技能名称和ID
+            let abilityName = 'Unknown';
+            let abilityTypeId = null;
+            let gameID = event.abilityGameID;
+            
+            // 尝试从 event.ability 获取信息
+            if (event.ability) {
+                if (event.ability.name) abilityName = event.ability.name;
+                if (event.ability.type) abilityTypeId = event.ability.type;
+                if (!gameID && event.ability.guid) gameID = event.ability.guid;
             }
-            const abilityTranslation = translateAbility(abilityNameEn);
-            let abilityName = abilityTranslation.name;
-            const damageType = abilityTranslation.type;
+
+            // 如果没有获取到 Type，尝试从 MasterData Map 中获取
+            if ((abilityTypeId === null || abilityTypeId === undefined) && gameID && abilityTypeMap[gameID]) {
+                abilityTypeId = abilityTypeMap[gameID];
+            }
+
+            // 如果没有获取到 Name，尝试从 MasterData Map 中获取
+            if (abilityName === 'Unknown' && gameID && abilityMap[gameID]) {
+                abilityName = abilityMap[gameID];
+            } else if (abilityName === 'Unknown' && gameID) {
+                abilityName = `Unknown (${gameID})`;
+            }
+            
+            // 优先使用 API 返回的类型
+            let damageType = null;
+            if (abilityTypeId !== null && abilityTypeId !== undefined) {
+                const typeIdNum = Number(abilityTypeId);
+                
+                // DEBUG: 输出调试信息
+                if (UI.debugModeCheckbox && UI.debugModeCheckbox.checked) {
+                    console.log(`[TypeDebug] Ability: ${abilityName}, ID: ${gameID}, RawType: ${abilityTypeId}, ParsedType: ${typeIdNum}`);
+                }
+
+                switch (typeIdNum) {
+                    case 1: damageType = '物理'; break;
+                    case 2: damageType = '魔法'; break;
+                    case 8: damageType = '混合'; break;
+                    case 32: damageType = '特殊'; break;
+                    case 128: damageType = '物理'; break;
+                    case 1024: damageType = '魔法'; break;
+                    default: damageType = `Type ${typeIdNum}`; break;
+                }
+            }
 
             // 如果是 DoT 汇总，添加标记
             if (event.isDotSummary) {
                 abilityName += ' (DoT)';
-                abilityNameEn += ' (DoT)';
             }
 
             // 使用 AOE 组中的最大伤害
             const damage = group.maxDamage;
-
-            // 根据选项决定是否显示英文原名
-            const showEnglish = UI.showEnglishCheckbox && UI.showEnglishCheckbox.checked;
             
             // 计算原始伤害（估算）
             // 逻辑：优先使用 API 提供的 unmitigatedAmount。
@@ -626,15 +577,17 @@ async function handleAnalyze() {
             // 约至千位数 (四舍五入到最近的 1000)
             rawDamage = Math.round(rawDamage / 1000) * 1000;
 
+            const isDot = event.isDotSummary;
+
             const result = {
                 '时间': timeStr,
-                '来源': showEnglish ? sourceNameEn : sourceName,
-                '技能': showEnglish ? abilityNameEn : abilityName,
+                '来源': sourceName,
+                '技能': abilityName,
                 '伤害类型': damageType || '',
-                '最大伤害': damage,
-                '盾值吸收': group.maxAbsorbed,
-                '减伤倍率': event.multiplier,
-                '原始伤害（估算）': rawDamage,
+                '最大伤害': isDot ? '' : damage,
+                '盾值吸收': isDot ? '' : group.maxAbsorbed,
+                '减伤倍率': isDot ? '' : event.multiplier,
+                '原始伤害（估算）': isDot ? '' : rawDamage,
                 '受击人数': group.events.length,
                 'DoT持续时间': event.dotDuration ? (event.dotDuration / 1000).toFixed(1) + 's' : '',
                 'DoT每跳原始': event.dotTickRaw ? Math.round(event.dotTickRaw) : '',
