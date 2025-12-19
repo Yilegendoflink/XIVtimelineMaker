@@ -6,7 +6,7 @@
 
 点击网址https://yilegendoflink.github.io/XIVtimelineMaker/ 进入使用。需要先登录fflogs页面进行授权。
 
-v2 api的用量限制我还没研究，姑且凑合用，没了再说.jpg
+v2 api有免费用量限制，如果用完了需要自行提供clientID，网站内有教程
 
 ## 关于技能类型（物理/魔法）和翻译问题
 
