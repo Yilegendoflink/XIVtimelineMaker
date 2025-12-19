@@ -426,65 +426,117 @@ async function handleAnalyze() {
             log(`DoT 合并完成: ${dotEvents.length} 条 Tick 合并为 ${mergedDotEvents.length} 条记录`);
         }
 
-        // 按照时间戳、来源、技能分组，用于合并 AOE
-        // AOE 判定：时间戳差异 < 1000ms (1秒), sourceID 相同, abilityGameID 相同
-        const aoeGroups = new Map();
-        const AOE_TIME_THRESHOLD = 1000; // 毫秒 (1秒)
+        // 1. 预计算所有事件的原始伤害
+        filteredEvents.forEach(event => {
+            let raw = event.unmitigatedAmount;
+            if (raw === undefined || raw === null) {
+                const amt = event.amount || 0;
+                const abs = event.absorbed || 0;
+                const mult = event.multiplier || 1;
+                raw = (mult !== 0) ? (amt + abs) / mult : (amt + abs);
+            }
+            event.calculatedRaw = raw;
+        });
+
+        // 2. 初步分组 (按时间、来源、技能)
+        const tempGroups = []; 
+        const AOE_TIME_THRESHOLD = 1000; 
 
         filteredEvents.forEach(event => {
             const abilityId = event.abilityGameID || (event.ability ? event.ability.guid : 0);
             const sourceId = event.sourceID || 0;
             
-            // 查找是否有匹配的 AOE 组
-            let foundGroup = false;
-            for (const [key, group] of aoeGroups.entries()) {
-                const timeDiff = Math.abs(event.timestamp - group.timestamp);
-                if (timeDiff <= AOE_TIME_THRESHOLD && 
-                    sourceId === group.sourceID && 
-                    abilityId === group.abilityId) {
-                    
-                    // 如果当前事件伤害更高，将其作为代表事件（通常我们关注受伤害最高的情况）
-                    if ((event.amount || 0) > group.maxDamage) {
-                        group.representativeEvent = event;
+            let foundGroup = null;
+            
+            // 倒序查找最近的组
+            for (let i = tempGroups.length - 1; i >= 0; i--) {
+                const group = tempGroups[i];
+                if (Math.abs(event.timestamp - group.timestamp) <= AOE_TIME_THRESHOLD) {
+                    if (sourceId === group.sourceID && abilityId === group.abilityId) {
+                        foundGroup = group;
+                        break;
                     }
-
-                    // 找到匹配的 AOE 组，更新最大伤害和时间戳范围
-                    group.events.push(event);
-                    group.maxDamage = Math.max(group.maxDamage, event.amount || 0);
-                    
-                    // 仅记录 API 提供的明确的 unmitigatedAmount
-                    if (event.unmitigatedAmount) {
-                        group.maxUnmitigated = Math.max(group.maxUnmitigated || 0, event.unmitigatedAmount);
-                    }
-                    group.maxAbsorbed = Math.max(group.maxAbsorbed, event.absorbed || 0);
-                    
-                    // 更新时间戳为最早的时间
-                    group.timestamp = Math.min(group.timestamp, event.timestamp);
-                    foundGroup = true;
-                    break;
+                } else if (group.timestamp < event.timestamp - AOE_TIME_THRESHOLD) {
+                    break; 
                 }
             }
-            
-            // 如果没找到匹配的组，创建新组
-            if (!foundGroup) {
-                const groupKey = `${event.timestamp}_${sourceId}_${abilityId}_${aoeGroups.size}`;
-                aoeGroups.set(groupKey, {
+
+            if (foundGroup) {
+                foundGroup.events.push(event);
+            } else {
+                tempGroups.push({
                     timestamp: event.timestamp,
                     sourceID: sourceId,
                     abilityId: abilityId,
-                    events: [event],
-                    maxDamage: event.amount || 0,
-                    maxUnmitigated: event.unmitigatedAmount || 0, // 仅记录明确的值
-                    maxAbsorbed: event.absorbed || 0,
-                    representativeEvent: event
+                    events: [event]
                 });
             }
         });
 
-        log(`合并前: ${filteredEvents.length} 条事件，合并后: ${aoeGroups.size} 条`);
+        // 3. 处理分组：拆分异常高伤害 (Outliers) 并计算中位数
+        const finalGroups = [];
+
+        tempGroups.forEach(group => {
+            if (group.events.length <= 1) {
+                group.representativeEvent = group.events[0];
+                finalGroups.push(group);
+                return;
+            }
+
+            // 按原始伤害排序
+            group.events.sort((a, b) => a.calculatedRaw - b.calculatedRaw);
+
+            // 计算中位数
+            const midIndex = Math.floor(group.events.length / 2);
+            const medianRaw = group.events.length % 2 !== 0 
+                ? group.events[midIndex].calculatedRaw
+                : (group.events[midIndex - 1].calculatedRaw + group.events[midIndex].calculatedRaw) / 2;
+
+            // 识别离群值 (大于中位数 1.5 倍)
+            const OUTLIER_THRESHOLD_RATIO = 1.5;
+            
+            const normalEvents = [];
+            const outlierEvents = [];
+
+            group.events.forEach(e => {
+                if (medianRaw > 0 && e.calculatedRaw > medianRaw * OUTLIER_THRESHOLD_RATIO) {
+                    outlierEvents.push(e);
+                } else {
+                    normalEvents.push(e);
+                }
+            });
+
+            // 处理正常组
+            if (normalEvents.length > 0) {
+                const nMidIndex = Math.floor(normalEvents.length / 2);
+                const repEvent = normalEvents[nMidIndex]; 
+                
+                finalGroups.push({
+                    ...group,
+                    events: normalEvents,
+                    representativeEvent: repEvent
+                });
+            }
+
+            // 处理离群组
+            outlierEvents.forEach(e => {
+                finalGroups.push({
+                    timestamp: e.timestamp,
+                    sourceID: group.sourceID,
+                    abilityId: group.abilityId,
+                    events: [e],
+                    representativeEvent: e
+                });
+            });
+        });
+        
+        // 重新按时间排序
+        finalGroups.sort((a, b) => a.timestamp - b.timestamp);
+
+        log(`合并前: ${filteredEvents.length} 条事件，初步分组: ${tempGroups.length}，处理离群值后: ${finalGroups.length} 条`);
 
         // 将分组转换为最终数据
-        const processedData = Array.from(aoeGroups.values()).map(group => {
+        const processedData = finalGroups.map(group => {
             const event = group.representativeEvent;
             
             // 计算相对时间 (毫秒)
@@ -554,25 +606,11 @@ async function handleAnalyze() {
                 abilityName += ' (DoT)';
             }
 
-            // 使用 AOE 组中的最大伤害
-            const damage = group.maxDamage;
+            // 使用 AOE 组中的代表事件伤害
+            const damage = event.amount || 0;
             
-            // 计算原始伤害（估算）
-            // 逻辑：优先使用 API 提供的 unmitigatedAmount。
-            // 如果 API 未提供 (为 0 或 undefined)，则使用公式 (amount + absorbed) / multiplier 进行估算。
-            let rawDamage = group.maxUnmitigated; 
-
-            if (!rawDamage) {
-                const repAmount = event.amount || 0;
-                const repAbsorbed = event.absorbed || 0;
-                const repMultiplier = event.multiplier || 1;
-                
-                if (repMultiplier !== 0) {
-                    rawDamage = (repAmount + repAbsorbed) / repMultiplier;
-                } else {
-                    rawDamage = repAmount + repAbsorbed;
-                }
-            }
+            // 使用预计算的原始伤害
+            let rawDamage = event.calculatedRaw;
 
             // 约至千位数 (四舍五入到最近的 1000)
             rawDamage = Math.round(rawDamage / 1000) * 1000;
@@ -584,8 +622,8 @@ async function handleAnalyze() {
                 '来源': sourceName,
                 '技能': abilityName,
                 '伤害类型': damageType || '',
-                '最大伤害': isDot ? '' : damage,
-                '盾值吸收': isDot ? '' : group.maxAbsorbed,
+                '直接伤害': isDot ? '' : damage,
+                '盾值吸收': isDot ? '' : (event.absorbed || 0),
                 '减伤倍率': isDot ? '' : event.multiplier,
                 '原始伤害（估算）': isDot ? '' : rawDamage,
                 '受击人数': group.events.length,
@@ -710,7 +748,18 @@ function createSyntheticDotEventNew(cluster) {
     // �������ʱ���ÿ��ԭʼ�˺�
     const duration = cluster.lastTime - cluster.startTime;
     const tickCount = cluster.events.length;
-    const avgRawPerTick = tickCount > 0 ? (totalUnmitigated / tickCount) : 0;
+    // 重新计算 totalRaw 以便取平均
+    let totalRaw = 0;
+    cluster.events.forEach(e => {
+        let raw = e.unmitigatedAmount;
+        if (raw === undefined || raw === null) {
+            const m = e.multiplier || 1;
+            raw = (m !== 0) ? ((e.amount || 0) + (e.absorbed || 0)) / m : ((e.amount || 0) + (e.absorbed || 0));
+        }
+        totalRaw += raw;
+    });
+    const avgRaw = tickCount > 0 ? (totalRaw / tickCount) : 0;
+    const avgRawPerTick = Math.round(avgRaw / 1000) * 1000;
 
     // �������¼��������ؼ������Ա��������
     return {
