@@ -15,9 +15,7 @@ const UI = {
     fightSelectorContainer: document.getElementById('fight-selector-container'),
     logContainer: document.getElementById('log-container'),
     debugModeCheckbox: document.getElementById('debug-mode-checkbox'),
-    showEnglishCheckbox: document.getElementById('show-english-checkbox'),
-    abilityCsvInput: document.getElementById('ability-csv'),
-    actorCsvInput: document.getElementById('actor-csv')
+    showEnglishCheckbox: document.getElementById('show-english-checkbox')
 };
 
 // 存储从 CSV 加载的翻译数据
@@ -59,8 +57,9 @@ async function init() {
     UI.logoutBtn.addEventListener('click', () => Auth.logout());
     UI.analyzeBtn.addEventListener('click', handleAnalyze);
     UI.reportUrlInput.addEventListener('change', handleUrlInput);
-    UI.abilityCsvInput.addEventListener('change', handleAbilityCsvUpload);
-    UI.actorCsvInput.addEventListener('change', handleActorCsvUpload);
+    
+    // 自动加载翻译文件
+    loadTranslationFiles();
 }
 
 // 解析 CSV 文件
@@ -73,62 +72,67 @@ function parseCSV(text) {
     });
 }
 
-// 处理技能翻译 CSV 上传
-async function handleAbilityCsvUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+// 自动加载本地翻译文件
+async function loadTranslationFiles() {
+    let abilityCount = 0;
+    let actorCount = 0;
+    let errors = [];
 
+    // 加载技能翻译
     try {
-        const text = await file.text();
-        const rows = parseCSV(text);
-        
-        csvAbilityTranslations = {};
-        let count = 0;
-        
-        rows.forEach(row => {
-            if (row.length >= 2) {
-                const englishName = row[0];
-                const chineseName = row[1];
-                const type = row[2] || null; // 第三列是类型（可选）
-                
-                csvAbilityTranslations[englishName] = {
-                    name: chineseName,
-                    type: type
-                };
-                count++;
-            }
-        });
-        
-        log(`已加载 ${count} 条技能翻译`);
+        const response = await fetch('ability_translations.csv');
+        if (response.ok) {
+            const text = await response.text();
+            const rows = parseCSV(text);
+            
+            csvAbilityTranslations = {};
+            rows.forEach(row => {
+                if (row.length >= 2) {
+                    const englishName = row[0];
+                    const chineseName = row[1];
+                    const type = row[2] || null;
+                    
+                    csvAbilityTranslations[englishName] = {
+                        name: chineseName,
+                        type: type
+                    };
+                    abilityCount++;
+                }
+            });
+        } else {
+            errors.push('技能翻译文件未找到');
+        }
     } catch (error) {
-        log(`加载技能翻译失败: ${error.message}`, true);
+        errors.push(`技能翻译: ${error.message}`);
     }
-}
 
-// 处理敌人翻译 CSV 上传
-async function handleActorCsvUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
+    // 加载敌人翻译
     try {
-        const text = await file.text();
-        const rows = parseCSV(text);
-        
-        csvActorTranslations = {};
-        let count = 0;
-        
-        rows.forEach(row => {
-            if (row.length >= 2) {
-                const englishName = row[0];
-                const chineseName = row[1];
-                csvActorTranslations[englishName] = chineseName;
-                count++;
-            }
-        });
-        
-        log(`已加载 ${count} 条敌人翻译`);
+        const response = await fetch('actor_translations.csv');
+        if (response.ok) {
+            const text = await response.text();
+            const rows = parseCSV(text);
+            
+            csvActorTranslations = {};
+            rows.forEach(row => {
+                if (row.length >= 2) {
+                    const englishName = row[0];
+                    const chineseName = row[1];
+                    csvActorTranslations[englishName] = chineseName;
+                    actorCount++;
+                }
+            });
+        } else {
+            errors.push('敌人翻译文件未找到');
+        }
     } catch (error) {
-        log(`加载敌人翻译失败: ${error.message}`, true);
+        errors.push(`敌人翻译: ${error.message}`);
+    }
+
+    // 静默加载，仅在控制台输出（可选）
+    console.log(`翻译文件加载完成: ${abilityCount} 条技能, ${actorCount} 条敌人`);
+    if (errors.length > 0) {
+        console.warn('翻译文件加载警告:', errors);
     }
 }
 
