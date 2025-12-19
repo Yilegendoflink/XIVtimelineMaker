@@ -432,8 +432,9 @@ async function handleAnalyze() {
             if (raw === undefined || raw === null) {
                 const amt = event.amount || 0;
                 const abs = event.absorbed || 0;
+                const over = event.overkill || 0; // 考虑 overkill
                 const mult = event.multiplier || 1;
-                raw = (mult !== 0) ? (amt + abs) / mult : (amt + abs);
+                raw = (mult !== 0) ? (amt + abs + over) / mult : (amt + abs + over);
             }
             event.calculatedRaw = raw;
         });
@@ -754,7 +755,10 @@ function createSyntheticDotEventNew(cluster) {
         let raw = e.unmitigatedAmount;
         if (raw === undefined || raw === null) {
             const m = e.multiplier || 1;
-            raw = (m !== 0) ? ((e.amount || 0) + (e.absorbed || 0)) / m : ((e.amount || 0) + (e.absorbed || 0));
+            const amt = e.amount || 0;
+            const abs = e.absorbed || 0;
+            const over = e.overkill || 0;
+            raw = (m !== 0) ? (amt + abs + over) / m : (amt + abs + over);
         }
         totalRaw += raw;
     });
