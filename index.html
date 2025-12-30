@@ -85,20 +85,33 @@
 
                 <div class="checkbox-group">
                     <label>
+                        <input type="checkbox" id="all-in-one-mode-checkbox" checked>
+                        减伤一体机导入模式
+                    </label>
+                    <label>
                         <input type="checkbox" id="ignore-auto-attack-checkbox">
-                        忽略普通攻击 (Attack / Auto Attack)
+                        忽略普通攻击
                     </label>
                     <label>
                         <input type="checkbox" id="merge-dot-checkbox">
-                        合并 DoT 伤害 (将持续伤害聚合为一行)
+                        合并 DoT 伤害
+                    </label>
+                    <label>
+                        <input type="checkbox" id="merge-aoe-checkbox" checked>
+                        合并 AOE 伤害
                     </label>
                     <label>
                         <input type="checkbox" id="debug-mode-checkbox">
-                        导出调试数据 (Raw Events + Master Data)
+                        导出调试数据
                     </label>
                 </div>
 
                 <button id="analyze-btn" class="primary-btn">开始分析并导出 Excel</button>
+
+                <div class="description-text" style="margin-top: 15px; font-size: 0.9em; color: #666; line-height: 1.5;">
+                    <p>开启一体机导入模式后生成的表格文件将在格式上更加便于复制粘贴时间轴进入 無川@幻影群岛 与 屿川@幻影群岛 大佬制作的时间轴一体机表格中，非常建议在复制前自行手动对自动记录的伤害事件进行简单筛选以适配复杂多变的实际副本情况。</p>
+                    <p style="margin-top: 5px;"><a href="https://ngabbs.com/read.php?tid=45896202" target="_blank" style="color: #007bff; text-decoration: none;">时间轴一体机发布网址</a></p>
+                </div>
             </section>
 
             <!-- 日志/状态显示 -->

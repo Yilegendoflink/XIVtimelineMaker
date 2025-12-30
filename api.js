@@ -57,6 +57,10 @@ const API = {
                         endTime
                         fightPercentage
                         kill
+                        enemyNPCs {
+                            id
+                        }
+                        friendlyPlayers
                     }
                 }
             }
@@ -67,7 +71,7 @@ const API = {
     },
 
     // 获取特定战斗的伤害事件
-    async getDamageEvents(reportCode, fightId, startTime, endTime) {
+    async getDamageEvents(reportCode, fightId, startTime, endTime, dataType = 'DamageTaken') {
         let allEvents = [];
         let nextTimestamp = startTime;
         let hasMore = true;
@@ -79,6 +83,9 @@ const API = {
         while (hasMore && loopCount < MAX_LOOPS) {
             loopCount++;
             // 这里的 startTime 和 endTime 是相对于 Report 开始的绝对时间戳
+            // 如果 dataType 为 null，则不传该参数 (获取所有类型)
+            const dataTypeParam = dataType ? `dataType: ${dataType},` : '';
+            
             const query = `
             query {
                 reportData {
@@ -87,7 +94,7 @@ const API = {
                             fightIDs: [${fightId}],
                             startTime: ${nextTimestamp},
                             endTime: ${endTime},
-                            dataType: DamageTaken,
+                            ${dataTypeParam}
                             limit: 10000,
                             translate: false
                         ) {
